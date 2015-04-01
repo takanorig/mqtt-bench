@@ -19,8 +19,7 @@ type ExecOptions struct {
 	Qos         byte   // QoS(0/1/2)
 }
 
-// 指定されたオプションを元に、publishの処理を行う。
-func ProcessPublish(opts ExecOptions) {
+func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string), opts ExecOptions) {
 	message := CreateFixedSizeMessage(opts.MessageSize)
 
 	clients := make([]*MQTT.Client, opts.ClientNum)
@@ -49,15 +48,7 @@ func ProcessPublish(opts ExecOptions) {
 	time.Sleep(3 * time.Second)
 
 	startTime := time.Now().Nanosecond()
-
-	// 並列で、メッセージを送信する。
-	wg := new(sync.WaitGroup)
-	for i := 0; i < len(clients); i++ {
-		wg.Add(1)
-		go ExecPublish(wg, i, clients[i], opts, message)
-	}
-	wg.Wait()
-
+	exec(clients, opts, message)
 	endTime := time.Now().Nanosecond()
 
 	for i := 0; i < len(clients); i++ {
@@ -72,15 +63,27 @@ func ProcessPublish(opts ExecOptions) {
 		opts.Broker, opts.ClientNum, opts.Count, duration, throughput)
 }
 
-// 1クライアントを指定して、publishの処理を行う。
-// この関数は、並列実行されることを想定している。
-func ExecPublish(wg *sync.WaitGroup, id int, client *MQTT.Client, opts ExecOptions, message string) {
-	defer wg.Done()
+// 全クライアントに対して、publishの処理を行う。
+func PublishAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string) {
+	message := param[0]
 
-	for i := 0; i < opts.Count; i++ {
-		// fmt.Printf("Publish : id=%d, count=%d\n", id, i)
-		Publish(client, "/go-mqtt/benchmark/"+string(id)+"/"+string(i), opts.Qos, message)
+	wg := new(sync.WaitGroup)
+
+	for id := 0; id < len(clients); id++ {
+		client := clients[id]
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			for index := 0; index < opts.Count; index++ {
+				// fmt.Printf("Publish : id=%d, count=%d\n", id, index)
+				Publish(client, "/go-mqtt/benchmark/"+string(id)+"/"+string(index), opts.Qos, message)
+			}
+		}()
 	}
+
+	wg.Wait()
 }
 
 // メッセージを送信する。
@@ -90,6 +93,48 @@ func Publish(client *MQTT.Client, topic string, qos byte, message string) {
 	if token.Wait() && token.Error() != nil {
 		fmt.Printf("Publish error: %s\n", token.Error())
 	}
+}
+
+// 全クライアントに対して、subscribeの処理を行う。
+func SubscribeAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string) {
+	wg := new(sync.WaitGroup)
+
+	for id := 0; id < len(clients); id++ {
+		client := clients[id]
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			for index := 0; index < opts.Count; index++ {
+				// fmt.Printf("Subscribe : id=%d, count=%d\n", id, index)
+				Subscribe(client, "/go-mqtt/benchmark/"+string(id)+"/"+string(index), opts.Qos)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// メッセージを受信する。
+func Subscribe(client *MQTT.Client, topic string, qos byte) {
+	token := client.Subscribe(topic, qos, nil)
+
+	if token.Wait() && token.Error() != nil {
+		fmt.Printf("Subscribe error: %s\n", token.Error())
+	}
+
+}
+
+// 固定サイズのメッセージを生成する。
+func CreateFixedSizeMessage(size int) string {
+	var buffer bytes.Buffer
+	for i := 0; i < size; i++ {
+		buffer.WriteString(string(i % 10))
+	}
+
+	message := buffer.String()
+	return message
 }
 
 // 指定されたBrokerへ接続し、そのMQTTクライアントを返す。
@@ -113,17 +158,6 @@ func Connect(broker string, id int) *MQTT.Client {
 // Brokerとの接続を切断する。
 func Disconnect(client *MQTT.Client) {
 	client.ForceDisconnect()
-}
-
-// 固定サイズのメッセージを生成する。
-func CreateFixedSizeMessage(size int) string {
-	var buffer bytes.Buffer
-	for i := 0; i < size; i++ {
-		buffer.WriteString(string(i % 10))
-	}
-
-	message := buffer.String()
-	return message
 }
 
 func main() {
@@ -168,8 +202,8 @@ func main() {
 
 	switch method {
 	case "pub":
-		ProcessPublish(execOpts)
+		Execute(PublishAllClient, execOpts)
 	case "sub":
-		// TODO implement Subscribe
+		Execute(SubscribeAllClient, execOpts)
 	}
 }
