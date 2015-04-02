@@ -11,10 +11,15 @@ import (
 	"time"
 )
 
+var Debug bool = false
+
 // 実行オプション
 type ExecOptions struct {
 	Broker       string // Broker URI
 	Qos          byte   // QoS(0/1/2)
+	Retain       bool   // Retain
+	Username     string // ユーザID
+	Password     string // パスワード
 	ClientNum    int    // クライアントの同時実行数
 	Count        int    // 1クライアント当たりのメッセージ数
 	MessageSize  int    // 1メッセージのサイズ(byte)
@@ -28,7 +33,7 @@ func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string
 	clients := make([]*MQTT.Client, opts.ClientNum)
 	hasErr := false
 	for i := 0; i < opts.ClientNum; i++ {
-		client := Connect(opts.Broker, i)
+		client := Connect(opts.Broker, opts.Username, opts.Password, i)
 		if client == nil {
 			hasErr = true
 			break
@@ -62,8 +67,8 @@ func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string
 	totalCount := opts.ClientNum * opts.Count
 	duration := (endTime - startTime) / 1000000                  // nanosecond -> millisecond
 	throughput := float64(totalCount) / float64(duration) * 1000 // messages/sec
-	fmt.Printf("\nResult : broker=%s, clients=%d, count=%d, start=%d, end=%d, duration=%dms, throughput=%.2fmessages/sec\n",
-		opts.Broker, opts.ClientNum, opts.Count, startTime, endTime, duration, throughput)
+	fmt.Printf("\nResult : broker=%s, clients=%d, count=%d, duration=%dms(start=%d, end=%d), throughput=%.2fmessages/sec\n",
+		opts.Broker, opts.ClientNum, opts.Count, duration, startTime, endTime, throughput)
 }
 
 // 全クライアントに対して、publishの処理を行う。
@@ -83,8 +88,10 @@ func PublishAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string)
 			for index := 0; index < opts.Count; index++ {
 				topic := fmt.Sprintf("/go-mqtt/benchmark/%d", clientId)
 
-				// fmt.Printf("Publish : id=%d, count=%d, topic=%s\n", clientId, index, topic)
-				Publish(client, topic, opts.Qos, message)
+				if Debug {
+					fmt.Printf("Publish : id=%d, count=%d, topic=%s\n", clientId, index, topic)
+				}
+				Publish(client, topic, opts.Qos, opts.Retain, message)
 
 				if opts.IntervalTime > 0 {
 					time.Sleep(time.Duration(opts.IntervalTime) * time.Millisecond)
@@ -97,8 +104,8 @@ func PublishAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string)
 }
 
 // メッセージを送信する。
-func Publish(client *MQTT.Client, topic string, qos byte, message string) {
-	token := client.Publish(topic, qos, true, message)
+func Publish(client *MQTT.Client, topic string, qos byte, retain bool, message string) {
+	token := client.Publish(topic, qos, retain, message)
 
 	if token.Wait() && token.Error() != nil {
 		fmt.Printf("Publish error: %s\n", token.Error())
@@ -120,7 +127,9 @@ func SubscribeAllClient(clients []*MQTT.Client, opts ExecOptions, param ...strin
 			for index := 0; index < opts.Count; index++ {
 				topic := fmt.Sprintf("/go-mqtt/benchmark/%d", clientId)
 
-				// fmt.Printf("Subscribe : id=%d, count=%d, topic=%s\n", clientId, index, topic)
+				if Debug {
+					fmt.Printf("Subscribe : id=%d, count=%d, topic=%s\n", clientId, index, topic)
+				}
 				Subscribe(client, topic, opts.Qos)
 
 				if opts.IntervalTime > 0 {
@@ -135,12 +144,14 @@ func SubscribeAllClient(clients []*MQTT.Client, opts ExecOptions, param ...strin
 
 // メッセージを受信する。
 func Subscribe(client *MQTT.Client, topic string, qos byte) {
-	//	var handler MQTT.MessageHandler = func(client *MQTT.Client, msg MQTT.Message) {
-	//		fmt.Printf("Received message : topic=%s, message=%s\n", msg.Topic(), msg.Payload())
-	//	}
-	//
-	//	token := client.Subscribe(topic, qos, handler)
-	token := client.Subscribe(topic, qos, nil)
+	var handler MQTT.MessageHandler = nil
+	if Debug {
+		handler = func(client *MQTT.Client, msg MQTT.Message) {
+			fmt.Printf("Received message : topic=%s, message=%s\n", msg.Topic(), msg.Payload())
+		}
+	}
+
+	token := client.Subscribe(topic, qos, handler)
 
 	if token.Wait() && token.Error() != nil {
 		fmt.Printf("Subscribe error: %s\n", token.Error())
@@ -160,10 +171,16 @@ func CreateFixedSizeMessage(size int) string {
 
 // 指定されたBrokerへ接続し、そのMQTTクライアントを返す。
 // 接続に失敗した場合は nil を返す。
-func Connect(broker string, id int) *MQTT.Client {
+func Connect(broker string, username string, password string, id int) *MQTT.Client {
 	opts := MQTT.NewClientOptions()
 	opts.AddBroker(broker)
 	opts.SetClientID(fmt.Sprintf("mqtt-benchmark%d", id))
+	if username != "" {
+		opts.SetUsername(username)
+	}
+	if password != "" {
+		opts.SetPassword(password)
+	}
 
 	client := MQTT.NewClient(opts)
 	token := client.Connect()
@@ -185,11 +202,15 @@ func main() {
 	broker := flag.String("broker", "tcp://{host}:{port}", "URI of MQTT broker (required)")
 	action := flag.String("action", "p/pub/publish or s/sub/subscribe", "Publish or Subscribe (required)")
 	qos := flag.Int("qos", 0, "MQTT QoS(0/1/2)")
+	retain := flag.Bool("retain", false, "MQTT Retain")
+	username := flag.String("broker-username", "", "Username for connecting to the MQTT broker")
+	password := flag.String("broker-password", "", "Password for connecting to the MQTT broker")
 	clients := flag.Int("clients", 10, "Number of clients")
 	count := flag.Int("count", 100, "Number of loops")
 	size := flag.Int("size", 1024, "Message size per publish (byte)")
 	preTime := flag.Int("pretime", 3000, "Pre wait time (ms)")
 	intervalTime := flag.Int("intervaltime", 0, "Interval time per message (ms)")
+	debug := flag.Bool("x", false, "Debug mode")
 
 	flag.Parse()
 
@@ -220,11 +241,16 @@ func main() {
 	execOpts := ExecOptions{}
 	execOpts.Broker = *broker
 	execOpts.Qos = byte(*qos)
+	execOpts.Retain = *retain
+	execOpts.Username = *username
+	execOpts.Password = *password
 	execOpts.ClientNum = *clients
 	execOpts.Count = *count
 	execOpts.MessageSize = *size
 	execOpts.PreTime = *preTime
 	execOpts.IntervalTime = *intervalTime
+
+	Debug = *debug
 
 	switch method {
 	case "pub":
