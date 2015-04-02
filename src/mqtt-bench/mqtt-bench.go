@@ -55,9 +55,9 @@ func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string
 	// 安定させるために、一定時間待機する。
 	time.Sleep(time.Duration(opts.PreTime) * time.Millisecond)
 
-	startTime := time.Now().Nanosecond()
+	startTime := time.Now()
 	exec(clients, opts, message)
-	endTime := time.Now().Nanosecond()
+	endTime := time.Now()
 
 	for i := 0; i < len(clients); i++ {
 		Disconnect(clients[i])
@@ -65,10 +65,10 @@ func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string
 
 	// 処理結果を出力する。
 	totalCount := opts.ClientNum * opts.Count
-	duration := (endTime - startTime) / 1000000                  // nanosecond -> millisecond
-	throughput := float64(totalCount) / float64(duration) * 1000 // messages/sec
-	fmt.Printf("\nResult : broker=%s, clients=%d, count=%d, duration=%dms(start=%d, end=%d), throughput=%.2fmessages/sec\n",
-		opts.Broker, opts.ClientNum, opts.Count, duration, startTime, endTime, throughput)
+	duration := (endTime.Sub(startTime)).Nanoseconds() / int64(1000000) // nanosecond -> millisecond
+	throughput := float64(totalCount) / float64(duration) * 1000        // messages/sec
+	fmt.Printf("\nResult : broker=%s, clients=%d, count=%d, duration=%dms, throughput=%.2fmessages/sec\n",
+		opts.Broker, opts.ClientNum, opts.Count, duration, throughput)
 }
 
 // 全クライアントに対して、publishの処理を行う。
