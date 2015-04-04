@@ -17,7 +17,7 @@ $ mqtt-bench -broker=tcp://192.168.1.100:1883 -action=pub
 2015-04-04 12:47:38.690896 +0900 JST Start benchmark
 2015-04-04 12:47:38.765896 +0900 JST End benchmark
 
-Result : broker=tcp://192.168.56.101:1883, clients=10, totalCount=1000, duration=72ms, throughput=13888.89messages/sec
+Result : broker=tcp://192.168.1.100:1883, clients=10, totalCount=1000, duration=72ms, throughput=13888.89messages/sec
 ```
 
 ### Subscribe
