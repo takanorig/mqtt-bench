@@ -7,7 +7,10 @@ Supported benchmark pattern is:
 * Parallel subscribe from clients
 
 ## Getting started
-### Installed
+### Installation
+```
+$ go get github.com/takanorig/mqtt-bench
+```
 
 ### Publish
 * Precondition
