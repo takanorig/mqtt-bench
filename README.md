@@ -1,5 +1,5 @@
-# MQTT Benchmark Tool
-MQTT-Bench : The benchmark tool for MQTT Broker.
+# MQTT-Bench : MQTT Benchmark Tool
+This is the benchmark tool for MQTT Broker implemented by [golang](https://golang.org/).
 This can benchmark the throughput for publishing and subscribing.
 
 Supported benchmark pattern is:
