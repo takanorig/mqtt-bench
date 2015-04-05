@@ -10,6 +10,7 @@ Supported benchmark pattern is:
 ### Installation
 ```
 $ go get github.com/takanorig/mqtt-bench
+$ go install github.com/takanorig/mqtt-bench
 ```
 
 ### Publish
