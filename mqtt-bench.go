@@ -179,9 +179,16 @@ func CreateFixedSizeMessage(size int) string {
 // 指定されたBrokerへ接続し、そのMQTTクライアントを返す。
 // 接続に失敗した場合は nil を返す。
 func Connect(broker string, username string, password string, id int) *MQTT.Client {
+
+	// 複数プロセスで、ClientIDが重複すると、Broker側で問題となるため、
+	// プロセスIDを利用して、IDを割り振る。
+	// mqttbench<プロセスIDの16進数値>-<クライアントの連番>
+	pid := strconv.FormatInt(int64(os.Getpid()), 16)
+	clientId := fmt.Sprintf("mqttbench%s-%d", pid, id)
+
 	opts := MQTT.NewClientOptions()
 	opts.AddBroker(broker)
-	opts.SetClientID(fmt.Sprintf("mqtt-benchmark%d", id))
+	opts.SetClientID(clientId)
 	if username != "" {
 		opts.SetUsername(username)
 	}
@@ -222,8 +229,8 @@ func Disconnect(client *MQTT.Client) {
 
 func main() {
 	broker := flag.String("broker", "tcp://{host}:{port}", "URI of MQTT broker (required)")
-	action := flag.String("action", "p/pub/publish or s/sub/subscribe", "Publish or Subscribe (required)")
-	qos := flag.Int("qos", 0, "MQTT QoS(0/1/2)")
+	action := flag.String("action", "p|pub|publish or s|sub|subscribe", "Publish or Subscribe (required)")
+	qos := flag.Int("qos", 0, "MQTT QoS(0|1|2)")
 	retain := flag.Bool("retain", false, "MQTT Retain")
 	topic := flag.String("topic", BASE_TOPIC, "Base topic")
 	username := flag.String("broker-username", "", "Username for connecting to the MQTT broker")

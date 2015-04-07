@@ -38,11 +38,11 @@ Result : broker=tcp://192.168.1.100:1883, clients=10, totalCount=1000, duration=
 ## Usage
 ```
 Usage of mqtt-bench
-  -action="p/pub/publish or s/sub/subscribe"  : Publish or Subscribe (required)
+  -action="p|pub|publish or s|sub|subscribe"  : Publish or Subscribe (required)
   -broker="tcp://{host}:{port}"               : URI of MQTT broker (required)
   -broker-password=""                         : Password for connecting to the MQTT broker
   -broker-username=""                         : Username for connecting to the MQTT broker
-  -qos=0                                      : MQTT QoS(0/1/2)
+  -qos=0                                      : MQTT QoS(0|1|2)
   -retain=false                               : MQTT Retain
   -topic="/mqtt-bench/benchmark"              : Base topic
   -clients=10                                 : Number of clients
