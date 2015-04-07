@@ -7,7 +7,11 @@ Supported benchmark pattern is:
 * Parallel subscribe from clients
 
 ## Getting started
-### Installed
+### Installation
+```
+$ go get github.com/takanorig/mqtt-bench
+$ go install github.com/takanorig/mqtt-bench
+```
 
 ### Publish
 * Precondition
@@ -28,7 +32,7 @@ Result : broker=tcp://192.168.1.100:1883, clients=10, totalCount=1000, duration=
 (Keep the messages before subscribing)
 $ mqtt-bench -broker=tcp://192.168.1.100:1883 -action=pub -retain=true
 
-$ mqtt-bench -broker=tcp://{host}:{port} -action=sub
+$ mqtt-bench -broker=tcp://192.168.1.100:1883 -action=sub
 2015-04-04 12:50:27.188396 +0900 JST Start benchmark
 2015-04-04 12:50:27.477896 +0900 JST End benchmark
 
