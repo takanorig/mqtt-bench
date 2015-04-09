@@ -17,17 +17,18 @@ var Debug bool = false
 
 // 実行オプション
 type ExecOptions struct {
-	Broker       string // Broker URI
-	Qos          byte   // QoS(0/1/2)
-	Retain       bool   // Retain
-	Topic        string // Topicのルート
-	Username     string // ユーザID
-	Password     string // パスワード
-	ClientNum    int    // クライアントの同時実行数
-	Count        int    // 1クライアント当たりのメッセージ数
-	MessageSize  int    // 1メッセージのサイズ(byte)
-	PreTime      int    // 実行前の待機時間(ms)
-	IntervalTime int    // メッセージ毎の実行間隔時間(ms)
+	Broker            string // Broker URI
+	Qos               byte   // QoS(0/1/2)
+	Retain            bool   // Retain
+	Topic             string // Topicのルート
+	Username          string // ユーザID
+	Password          string // パスワード
+	ClientNum         int    // クライアントの同時実行数
+	Count             int    // 1クライアント当たりのメッセージ数
+	MessageSize       int    // 1メッセージのサイズ(byte)
+	UseDefaultHandler bool   // Subscriber個別ではなく、デフォルトのMessageHandlerを利用するかどうか
+	PreTime           int    // 実行前の待機時間(ms)
+	IntervalTime      int    // メッセージ毎の実行間隔時間(ms)
 }
 
 func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string), opts ExecOptions) {
@@ -36,7 +37,7 @@ func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string
 	clients := make([]*MQTT.Client, opts.ClientNum)
 	hasErr := false
 	for i := 0; i < opts.ClientNum; i++ {
-		client := Connect(opts.Broker, opts.Username, opts.Password, i)
+		client := Connect(i, opts)
 		if client == nil {
 			hasErr = true
 			break
@@ -178,7 +179,7 @@ func CreateFixedSizeMessage(size int) string {
 
 // 指定されたBrokerへ接続し、そのMQTTクライアントを返す。
 // 接続に失敗した場合は nil を返す。
-func Connect(broker string, username string, password string, id int) *MQTT.Client {
+func Connect(id int, execOpts ExecOptions) *MQTT.Client {
 
 	// 複数プロセスで、ClientIDが重複すると、Broker側で問題となるため、
 	// プロセスIDを利用して、IDを割り振る。
@@ -187,13 +188,25 @@ func Connect(broker string, username string, password string, id int) *MQTT.Clie
 	clientId := fmt.Sprintf("mqttbench%s-%d", pid, id)
 
 	opts := MQTT.NewClientOptions()
-	opts.AddBroker(broker)
+	opts.AddBroker(execOpts.Broker)
 	opts.SetClientID(clientId)
-	if username != "" {
-		opts.SetUsername(username)
+
+	if execOpts.Username != "" {
+		opts.SetUsername(execOpts.Username)
 	}
-	if password != "" {
-		opts.SetPassword(password)
+	if execOpts.Password != "" {
+		opts.SetPassword(execOpts.Password)
+	}
+
+	if execOpts.UseDefaultHandler == true {
+		// Apollo(1.7.1利用)の場合、DefaultPublishHandlerを指定しないと、Subscribeできない。
+		// ただし、指定した場合でもretainされたメッセージは最初の1度しか取得されず、2回目以降のアクセスでは空になる点に注意。
+		var handler MQTT.MessageHandler = func(client *MQTT.Client, msg MQTT.Message) {
+			if Debug {
+				fmt.Printf("Received at defaultHandler : topic=%s, message=%s\n", msg.Topic(), msg.Payload())
+			}
+		}
+		opts.SetDefaultPublishHandler(handler)
 	}
 
 	client := MQTT.NewClient(opts)
@@ -238,6 +251,7 @@ func main() {
 	clients := flag.Int("clients", 10, "Number of clients")
 	count := flag.Int("count", 100, "Number of loops per client")
 	size := flag.Int("size", 1024, "Message size per publish (byte)")
+	useDefaultHandler := flag.Bool("support-unknown-received", false, "Using default messageHandler for a message that does not match any known subscriptions")
 	preTime := flag.Int("pretime", 3000, "Pre wait time (ms)")
 	intervalTime := flag.Int("intervaltime", 0, "Interval time per message (ms)")
 	debug := flag.Bool("x", false, "Debug mode")
@@ -278,6 +292,7 @@ func main() {
 	execOpts.ClientNum = *clients
 	execOpts.Count = *count
 	execOpts.MessageSize = *size
+	execOpts.UseDefaultHandler = *useDefaultHandler
 	execOpts.PreTime = *preTime
 	execOpts.IntervalTime = *intervalTime
 
