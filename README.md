@@ -19,6 +19,7 @@ $ go install github.com/takanorig/mqtt-bench
 or 
 
 Download here
+
 https://github.com/takanorig/mqtt-bench/wiki/Download
 
 ### Publish
@@ -66,4 +67,5 @@ Usage of mqtt-bench
 ```
 
 ## Note
-If you use [Apollo 1.7.x](http://activemq.apache.org/apollo/), the subscribed messages can't be output to console even if debug mode. If you want to output the subscribed messages, designate '-support-unknown-received' option.
+* Using Apollo
+ * If you use [Apollo 1.7.x](http://activemq.apache.org/apollo/), the subscribed messages can't be output to console even if debug mode. If you want to output the subscribed messages, designate ```-support-unknown-received``` option.
