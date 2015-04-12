@@ -8,10 +8,18 @@ Supported benchmark pattern is:
 
 ## Getting started
 ### Installation
+
+Use ```go get``` and ```go install```
+
 ```
 $ go get github.com/takanorig/mqtt-bench
 $ go install github.com/takanorig/mqtt-bench
 ```
+
+or 
+
+Download here
+https://github.com/takanorig/mqtt-bench/wiki/Download
 
 ### Publish
 * Precondition
@@ -56,3 +64,6 @@ Usage of mqtt-bench
   -intervaltime=0                             : Interval time per message (ms)
   -x=false                                    : Debug mode
 ```
+
+## Note
+If you use [Apollo 1.7.x](http://activemq.apache.org/apollo/), the subscribed messages can't be output to console even if debug mode. If you want to output the subscribed messages, designate '-support-unknown-received' option.
