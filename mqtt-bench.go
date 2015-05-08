@@ -15,6 +15,9 @@ const BASE_TOPIC string = "/mqtt-bench/benchmark"
 
 var Debug bool = false
 
+// Apollo用に、Subscribe時のDefaultHandlerの処理結果を保持できるようにする。
+var DefaultHandlerResults []*SubscribeResult
+
 // 実行オプション
 type ExecOptions struct {
 	Broker            string // Broker URI
@@ -31,8 +34,11 @@ type ExecOptions struct {
 	IntervalTime      int    // メッセージ毎の実行間隔時間(ms)
 }
 
-func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string), opts ExecOptions) {
+func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string) int, opts ExecOptions) {
 	message := CreateFixedSizeMessage(opts.MessageSize)
+
+	// 配列を初期化
+	DefaultHandlerResults = make([]*SubscribeResult, opts.ClientNum)
 
 	clients := make([]*MQTT.Client, opts.ClientNum)
 	hasErr := false
@@ -62,7 +68,7 @@ func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string
 	fmt.Printf("%s Start benchmark\n", time.Now())
 
 	startTime := time.Now()
-	exec(clients, opts, message)
+	totalCount := exec(clients, opts, message)
 	endTime := time.Now()
 
 	fmt.Printf("%s End benchmark\n", time.Now())
@@ -71,7 +77,6 @@ func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string
 	AsyncDisconnect(clients)
 
 	// 処理結果を出力する。
-	totalCount := opts.ClientNum * opts.Count
 	duration := (endTime.Sub(startTime)).Nanoseconds() / int64(1000000) // nanosecond -> millisecond
 	throughput := float64(totalCount) / float64(duration) * 1000        // messages/sec
 	fmt.Printf("\nResult : broker=%s, clients=%d, totalCount=%d, duration=%dms, throughput=%.2fmessages/sec\n",
@@ -80,11 +85,12 @@ func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string
 
 // 全クライアントに対して、publishの処理を行う。
 // 送信したメッセージ数を返す（原則、クライアント数分となる）。
-func PublishAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string) {
+func PublishAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string) int {
 	message := param[0]
 
 	wg := new(sync.WaitGroup)
 
+	totalCount := 0
 	for id := 0; id < len(clients); id++ {
 		wg.Add(1)
 
@@ -100,6 +106,7 @@ func PublishAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string)
 					fmt.Printf("Publish : id=%d, count=%d, topic=%s\n", clientId, index, topic)
 				}
 				Publish(client, topic, opts.Qos, opts.Retain, message)
+				totalCount++
 
 				if opts.IntervalTime > 0 {
 					time.Sleep(time.Duration(opts.IntervalTime) * time.Millisecond)
@@ -109,6 +116,8 @@ func PublishAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string)
 	}
 
 	wg.Wait()
+
+	return totalCount
 }
 
 // メッセージを送信する。
@@ -121,10 +130,12 @@ func Publish(client *MQTT.Client, topic string, qos byte, retain bool, message s
 }
 
 // 全クライアントに対して、subscribeの処理を行う。
-// 受信したメッセージ数を返す。
-func SubscribeAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string) {
+// 指定されたカウント数分、メッセージ取得を行う（メッセージが取得できない場合もカウントする）。
+func SubscribeAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string) int {
 	wg := new(sync.WaitGroup)
 
+	totalCount := 0
+	totalRecieve := 0
 	for id := 0; id < len(clients); id++ {
 		wg.Add(1)
 
@@ -139,7 +150,12 @@ func SubscribeAllClient(clients []*MQTT.Client, opts ExecOptions, param ...strin
 				if Debug {
 					fmt.Printf("Subscribe : id=%d, count=%d, topic=%s\n", clientId, index, topic)
 				}
-				Subscribe(client, topic, opts.Qos)
+
+				result := Subscribe(client, topic, opts.Qos)
+				// 実行数をカウント
+				totalCount++
+				// メッセージ数をカウント
+				totalRecieve += result.Count
 
 				if opts.IntervalTime > 0 {
 					time.Sleep(time.Duration(opts.IntervalTime) * time.Millisecond)
@@ -149,11 +165,84 @@ func SubscribeAllClient(clients []*MQTT.Client, opts ExecOptions, param ...strin
 	}
 
 	wg.Wait()
+
+	if totalRecieve == 0 {
+		fmt.Printf("Subscribe warning : recieved no message.\n")
+	}
+
+	return totalCount
+}
+
+// 全クライアントに対して、subscribeの処理を行う。
+// 指定されたカウント数分、メッセージを受信待ちする（メッセージが取得できない場合はカウントされない）。
+// この処理では、Publishし続けながら、Subscribeの処理を行う。
+func SubscribeAllClient2(clients []*MQTT.Client, opts ExecOptions, param ...string) int {
+	wg := new(sync.WaitGroup)
+
+	results := make([]*SubscribeResult, len(clients))
+	for id := 0; id < len(clients); id++ {
+		wg.Add(1)
+
+		client := clients[id]
+		topic := fmt.Sprintf(opts.Topic+"/%d", id)
+
+		results[id] = Subscribe(client, topic, opts.Qos)
+
+		// DefaultHandlerを利用する場合は、Subscribe個別のHandlerではなく、
+		// DefaultHandlerの処理結果を参照する。
+		if opts.UseDefaultHandler == true {
+			results[id] = DefaultHandlerResults[id]
+		}
+
+		go func(clientId int) {
+			defer wg.Done()
+
+			var loop int = 0
+			for results[clientId].Count <= opts.Count {
+				loop++
+
+				if Debug {
+					fmt.Printf("Subscribe : id=%d, count=%d, topic=%s\n", clientId, results[clientId].Count, topic)
+				}
+
+				if opts.IntervalTime > 0 {
+					time.Sleep(time.Duration(opts.IntervalTime) * time.Millisecond)
+				} else {
+					// for文による負荷を下げるため、最低でも1000ナノ秒（0.001ミリ秒）は待機する。
+					time.Sleep(1000 * time.Nanosecond)
+				}
+
+				// 無限ループを避けるため、指定されたCountの100倍に達したら、エラーで終了する。
+				if loop >= opts.Count*100 {
+					panic("Subscribe error : Not finished in the max count. It may not be received the message.")
+				}
+			}
+		}(id)
+	}
+
+	wg.Wait()
+
+	// 受信メッセージ数をカウント
+	totalCount := 0
+	for id := 0; id < len(results); id++ {
+		totalCount += results[id].Count
+	}
+
+	return totalCount
+}
+
+// Subscribeの処理結果
+type SubscribeResult struct {
+	Count int // 受信メッセージ数
 }
 
 // メッセージを受信する。
-func Subscribe(client *MQTT.Client, topic string, qos byte) {
+func Subscribe(client *MQTT.Client, topic string, qos byte) *SubscribeResult {
+	var result *SubscribeResult = &SubscribeResult{}
+	result.Count = 0
+
 	var handler MQTT.MessageHandler = func(client *MQTT.Client, msg MQTT.Message) {
+		result.Count++
 		if Debug {
 			fmt.Printf("Received message : topic=%s, message=%s\n", msg.Topic(), msg.Payload())
 		}
@@ -164,6 +253,8 @@ func Subscribe(client *MQTT.Client, topic string, qos byte) {
 	if token.Wait() && token.Error() != nil {
 		fmt.Printf("Subscribe error: %s\n", token.Error())
 	}
+
+	return result
 }
 
 // 固定サイズのメッセージを生成する。
@@ -201,12 +292,18 @@ func Connect(id int, execOpts ExecOptions) *MQTT.Client {
 	if execOpts.UseDefaultHandler == true {
 		// Apollo(1.7.1利用)の場合、DefaultPublishHandlerを指定しないと、Subscribeできない。
 		// ただし、指定した場合でもretainされたメッセージは最初の1度しか取得されず、2回目以降のアクセスでは空になる点に注意。
+		var result *SubscribeResult = &SubscribeResult{}
+		result.Count = 0
+
 		var handler MQTT.MessageHandler = func(client *MQTT.Client, msg MQTT.Message) {
+			result.Count++
 			if Debug {
 				fmt.Printf("Received at defaultHandler : topic=%s, message=%s\n", msg.Topic(), msg.Payload())
 			}
 		}
 		opts.SetDefaultPublishHandler(handler)
+
+		DefaultHandlerResults[id] = result
 	}
 
 	client := MQTT.NewClient(opts)
@@ -242,7 +339,7 @@ func Disconnect(client *MQTT.Client) {
 
 func main() {
 	broker := flag.String("broker", "tcp://{host}:{port}", "URI of MQTT broker (required)")
-	action := flag.String("action", "p|pub|publish or s|sub|subscribe", "Publish or Subscribe (required)")
+	action := flag.String("action", "p|pub or s|sub or s2|sub2", "Publish or Subscribe or Subscribe(with publishing) (required)")
 	qos := flag.Int("qos", 0, "MQTT QoS(0|1|2)")
 	retain := flag.Bool("retain", false, "MQTT Retain")
 	topic := flag.String("topic", BASE_TOPIC, "Base topic")
@@ -271,13 +368,15 @@ func main() {
 
 	// validate "action"
 	var method string = ""
-	if *action == "p" || *action == "pub" || *action == "publish" {
+	if *action == "p" || *action == "pub" {
 		method = "pub"
-	} else if *action == "s" || *action == "sub" || *action == "subscribe" {
+	} else if *action == "s" || *action == "sub" {
 		method = "sub"
+	} else if *action == "s2" || *action == "sub2" {
+		method = "sub2"
 	}
 
-	if method != "pub" && method != "sub" {
+	if method != "pub" && method != "sub" && method != "sub2" {
 		fmt.Printf("Invalid argument : -action -> %s\n", *action)
 		return
 	}
@@ -303,5 +402,7 @@ func main() {
 		Execute(PublishAllClient, execOpts)
 	case "sub":
 		Execute(SubscribeAllClient, execOpts)
+	case "sub2":
+		Execute(SubscribeAllClient2, execOpts)
 	}
 }
