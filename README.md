@@ -4,7 +4,7 @@ This can benchmark the throughput for publishing and subscribing.
 
 Supported benchmark pattern is:
 * Parallel publish from clients
-* Parallel subscribe from clients
+* Parallel subscribe from clients with publishing
 
 ## Getting started
 ### Installation
@@ -36,10 +36,10 @@ Result : broker=tcp://192.168.1.100:1883, clients=10, totalCount=1000, duration=
 ### Subscribe
 * Precondition
  * The MQTT Broker is started.
- * The MQTT broker will keep the messages. It will be published the message with retained.
+ * Publishing to MQTT Broker.
 ```
-(Keep the messages before subscribing)
-$ mqtt-bench -broker=tcp://192.168.1.100:1883 -action=pub -retain=true
+(Publish the messages while subscribing)
+$ mqtt-bench -broker=tcp://192.168.1.100:1883 -action=pub -count=10000
 
 $ mqtt-bench -broker=tcp://192.168.1.100:1883 -action=sub
 2015-04-04 12:50:27.188396 +0900 JST Start benchmark
@@ -48,10 +48,15 @@ $ mqtt-bench -broker=tcp://192.168.1.100:1883 -action=sub
 Result : broker=tcp://192.168.1.100:1883, clients=10, totalCount=1000, duration=287ms, throughput=3484.32messages/sec
 ```
 
+If the following message is output to the console, the count is over limit.
+So, please set ```-intervalTime``` option. 
+```
+panic: Subscribe error : Not finished in the max count. It may not be received the message.
+```
 ## Usage
 ```
 Usage of mqtt-bench
-  -action="p|pub|publish or s|sub|subscribe"  : Publish or Subscribe (required)
+  -action="p|pub or s|sub"                    : Publish or Subscribe (required)
   -broker="tcp://{host}:{port}"               : URI of MQTT broker (required)
   -broker-password=""                         : Password for connecting to the MQTT broker
   -broker-username=""                         : Username for connecting to the MQTT broker

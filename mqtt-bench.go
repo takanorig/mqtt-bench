@@ -21,7 +21,7 @@ var DefaultHandlerResults []*SubscribeResult
 // 実行オプション
 type ExecOptions struct {
 	Broker            string // Broker URI
-	Qos               byte   // QoS(0/1/2)
+	Qos               byte   // QoS(0|1|2)
 	Retain            bool   // Retain
 	Topic             string // Topicのルート
 	Username          string // ユーザID
@@ -130,53 +130,9 @@ func Publish(client *MQTT.Client, topic string, qos byte, retain bool, message s
 }
 
 // 全クライアントに対して、subscribeの処理を行う。
-// 指定されたカウント数分、メッセージ取得を行う（メッセージが取得できない場合もカウントする）。
-func SubscribeAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string) int {
-	wg := new(sync.WaitGroup)
-
-	totalCount := 0
-	totalRecieve := 0
-	for id := 0; id < len(clients); id++ {
-		wg.Add(1)
-
-		client := clients[id]
-
-		go func(clientId int) {
-			defer wg.Done()
-
-			for index := 0; index < opts.Count; index++ {
-				topic := fmt.Sprintf(opts.Topic+"/%d", clientId)
-
-				if Debug {
-					fmt.Printf("Subscribe : id=%d, count=%d, topic=%s\n", clientId, index, topic)
-				}
-
-				result := Subscribe(client, topic, opts.Qos)
-				// 実行数をカウント
-				totalCount++
-				// メッセージ数をカウント
-				totalRecieve += result.Count
-
-				if opts.IntervalTime > 0 {
-					time.Sleep(time.Duration(opts.IntervalTime) * time.Millisecond)
-				}
-			}
-		}(id)
-	}
-
-	wg.Wait()
-
-	if totalRecieve == 0 {
-		fmt.Printf("Subscribe warning : recieved no message.\n")
-	}
-
-	return totalCount
-}
-
-// 全クライアントに対して、subscribeの処理を行う。
 // 指定されたカウント数分、メッセージを受信待ちする（メッセージが取得できない場合はカウントされない）。
 // この処理では、Publishし続けながら、Subscribeの処理を行う。
-func SubscribeAllClient2(clients []*MQTT.Client, opts ExecOptions, param ...string) int {
+func SubscribeAllClient(clients []*MQTT.Client, opts ExecOptions, param ...string) int {
 	wg := new(sync.WaitGroup)
 
 	results := make([]*SubscribeResult, len(clients))
@@ -339,7 +295,7 @@ func Disconnect(client *MQTT.Client) {
 
 func main() {
 	broker := flag.String("broker", "tcp://{host}:{port}", "URI of MQTT broker (required)")
-	action := flag.String("action", "p|pub or s|sub or s2|sub2", "Publish or Subscribe or Subscribe(with publishing) (required)")
+	action := flag.String("action", "p|pub or s|sub", "Publish or Subscribe or Subscribe(with publishing) (required)")
 	qos := flag.Int("qos", 0, "MQTT QoS(0|1|2)")
 	retain := flag.Bool("retain", false, "MQTT Retain")
 	topic := flag.String("topic", BASE_TOPIC, "Base topic")
@@ -372,11 +328,9 @@ func main() {
 		method = "pub"
 	} else if *action == "s" || *action == "sub" {
 		method = "sub"
-	} else if *action == "s2" || *action == "sub2" {
-		method = "sub2"
 	}
 
-	if method != "pub" && method != "sub" && method != "sub2" {
+	if method != "pub" && method != "sub" {
 		fmt.Printf("Invalid argument : -action -> %s\n", *action)
 		return
 	}
@@ -402,7 +356,5 @@ func main() {
 		Execute(PublishAllClient, execOpts)
 	case "sub":
 		Execute(SubscribeAllClient, execOpts)
-	case "sub2":
-		Execute(SubscribeAllClient2, execOpts)
 	}
 }
