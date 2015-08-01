@@ -154,7 +154,7 @@ func SubscribeAllClient(clients []*MQTT.Client, opts ExecOptions, param ...strin
 			defer wg.Done()
 
 			var loop int = 0
-			for results[clientId].Count <= opts.Count {
+			for results[clientId].Count < opts.Count {
 				loop++
 
 				if Debug {
