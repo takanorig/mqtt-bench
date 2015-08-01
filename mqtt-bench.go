@@ -290,7 +290,7 @@ func AsyncDisconnect(clients []*MQTT.Client) {
 
 // Brokerとの接続を切断する。
 func Disconnect(client *MQTT.Client) {
-	client.ForceDisconnect()
+	client.Disconnect(10)
 }
 
 func main() {
