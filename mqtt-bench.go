@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	MQTT "git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git"
+	"io/ioutil"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -20,20 +24,82 @@ var DefaultHandlerResults []*SubscribeResult
 
 // 実行オプション
 type ExecOptions struct {
-	Broker            string // Broker URI
-	Qos               byte   // QoS(0|1|2)
-	Retain            bool   // Retain
-	Topic             string // Topicのルート
-	Username          string // ユーザID
-	Password          string // パスワード
-	ClientNum         int    // クライアントの同時実行数
-	Count             int    // 1クライアント当たりのメッセージ数
-	MessageSize       int    // 1メッセージのサイズ(byte)
-	UseDefaultHandler bool   // Subscriber個別ではなく、デフォルトのMessageHandlerを利用するかどうか
-	PreTime           int    // 実行前の待機時間(ms)
-	IntervalTime      int    // メッセージ毎の実行間隔時間(ms)
+	Broker            string     // Broker URI
+	Qos               byte       // QoS(0|1|2)
+	Retain            bool       // Retain
+	Topic             string     // Topicのルート
+	Username          string     // ユーザID
+	Password          string     // パスワード
+	CertConfig        CertConfig // 認証定義
+	ClientNum         int        // クライアントの同時実行数
+	Count             int        // 1クライアント当たりのメッセージ数
+	MessageSize       int        // 1メッセージのサイズ(byte)
+	UseDefaultHandler bool       // Subscriber個別ではなく、デフォルトのMessageHandlerを利用するかどうか
+	PreTime           int        // 実行前の待機時間(ms)
+	IntervalTime      int        // メッセージ毎の実行間隔時間(ms)
 }
 
+// 認証設定
+type CertConfig interface{}
+
+// サーバ認証設定
+type ServerCertConfig struct {
+	CertConfig
+	ServerCertFile string // サーバ証明書ファイル
+}
+
+// クライアント認証設定
+type ClientCertConfig struct {
+	CertConfig
+	RootCAFile     string // ルート証明書ファイル
+	ClientCertFile string // クライアント証明書ファイル
+	ClientKeyFile  string // クライアント公開鍵ファイル
+}
+
+// サーバ証明書用のTLS設定を生成する。
+//   serverCertFile : サーバ証明書のファイル
+func CreateServerTlsConfig(serverCertFile string) *tls.Config {
+	certpool := x509.NewCertPool()
+	pem, err := ioutil.ReadFile(serverCertFile)
+	if err == nil {
+		certpool.AppendCertsFromPEM(pem)
+	}
+
+	return &tls.Config{
+		RootCAs: certpool,
+	}
+}
+
+// クライアント証明書用のTLS設定を生成する。
+//   rootCAFile     : ルート証明書ファイル
+//   clientCertFile : クライアント証明書ファイル
+//   clientKeyFile  : クライアント公開鍵ファイル
+func CreateClientTlsConfig(rootCAFile string, clientCertFile string, clientKeyFile string) *tls.Config {
+	certpool := x509.NewCertPool()
+	rootCA, err := ioutil.ReadFile(rootCAFile)
+	if err == nil {
+		certpool.AppendCertsFromPEM(rootCA)
+	}
+
+	cert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
+	if err != nil {
+		panic(err)
+	}
+	cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		panic(err)
+	}
+
+	return &tls.Config{
+		RootCAs:            certpool,
+		ClientAuth:         tls.NoClientCert,
+		ClientCAs:          nil,
+		InsecureSkipVerify: true,
+		Certificates:       []tls.Certificate{cert},
+	}
+}
+
+// 実行する。
 func Execute(exec func(clients []*MQTT.Client, opts ExecOptions, param ...string) int, opts ExecOptions) {
 	message := CreateFixedSizeMessage(opts.MessageSize)
 
@@ -245,6 +311,19 @@ func Connect(id int, execOpts ExecOptions) *MQTT.Client {
 		opts.SetPassword(execOpts.Password)
 	}
 
+	// TLSの設定
+	certConfig := execOpts.CertConfig
+	switch c := certConfig.(type) {
+	case ServerCertConfig:
+		tlsConfig := CreateServerTlsConfig(c.ServerCertFile)
+		opts.SetTLSConfig(tlsConfig)
+	case ClientCertConfig:
+		tlsConfig := CreateClientTlsConfig(c.RootCAFile, c.ClientCertFile, c.ClientKeyFile)
+		opts.SetTLSConfig(tlsConfig)
+	default:
+		// do nothing.
+	}
+
 	if execOpts.UseDefaultHandler == true {
 		// Apollo(1.7.1利用)の場合、DefaultPublishHandlerを指定しないと、Subscribeできない。
 		// ただし、指定した場合でもretainされたメッセージは最初の1度しか取得されず、2回目以降のアクセスでは空になる点に注意。
@@ -301,6 +380,7 @@ func main() {
 	topic := flag.String("topic", BASE_TOPIC, "Base topic")
 	username := flag.String("broker-username", "", "Username for connecting to the MQTT broker")
 	password := flag.String("broker-password", "", "Password for connecting to the MQTT broker")
+	tls := flag.String("tls", "", "TLS mode. 'server:cartFile' or 'client:rootCAFile,clientCertFile,clientKeyFile'")
 	clients := flag.Int("clients", 10, "Number of clients")
 	count := flag.Int("count", 100, "Number of loops per client")
 	size := flag.Int("size", 1024, "Message size per publish (byte)")
@@ -335,6 +415,25 @@ func main() {
 		return
 	}
 
+	// parse TLS mode
+	var certConfig CertConfig = nil
+	if *tls == "" {
+		// nil
+	} else if strings.HasPrefix(*tls, "server:") {
+		var strArray = strings.Split(*tls, "server:")
+		certConfig = ServerCertConfig{
+			ServerCertFile: strings.TrimSpace(strArray[1])}
+	} else if strings.HasPrefix(*tls, "client:") {
+		var strArray = strings.Split(*tls, "client:")
+		var configArray = strings.Split(strArray[1], ",")
+		certConfig = ClientCertConfig{
+			RootCAFile:     strings.TrimSpace(configArray[0]),
+			ClientCertFile: strings.TrimSpace(configArray[1]),
+			ClientKeyFile:  strings.TrimSpace(configArray[2])}
+	} else {
+		// nil
+	}
+
 	execOpts := ExecOptions{}
 	execOpts.Broker = *broker
 	execOpts.Qos = byte(*qos)
@@ -342,6 +441,7 @@ func main() {
 	execOpts.Topic = *topic
 	execOpts.Username = *username
 	execOpts.Password = *password
+	execOpts.CertConfig = certConfig
 	execOpts.ClientNum = *clients
 	execOpts.Count = *count
 	execOpts.MessageSize = *size
