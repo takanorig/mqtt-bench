@@ -388,7 +388,7 @@ func main() {
 	topic := flag.String("topic", BASE_TOPIC, "Base topic")
 	username := flag.String("broker-username", "", "Username for connecting to the MQTT broker")
 	password := flag.String("broker-password", "", "Password for connecting to the MQTT broker")
-	tls := flag.String("tls", "", "TLS mode. 'server:cartFile' or 'client:rootCAFile,clientCertFile,clientKeyFile'")
+	tls := flag.String("tls", "", "TLS mode. 'server:certFile' or 'client:rootCAFile,clientCertFile,clientKeyFile'")
 	clients := flag.Int("clients", 10, "Number of clients")
 	count := flag.Int("count", 100, "Number of loops per client")
 	size := flag.Int("size", 1024, "Message size per publish (byte)")
