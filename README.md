@@ -53,6 +53,20 @@ So, please set ```-intervalTime``` option.
 ```
 panic: Subscribe error : Not finished in the max count. It may not be received the message.
 ```
+
+### TLS mode
+Use ```-tls``` option.
+
+- Server authentication
+```
+-tls=server:certFile
+```
+
+- Server and Client authentication
+```
+-tls=client:rootCAFile,clientCertFile,clientKeyFile
+```
+
 ## Usage
 ```
 Usage of mqtt-bench
@@ -60,6 +74,7 @@ Usage of mqtt-bench
   -broker="tcp://{host}:{port}"               : URI of MQTT broker (required)
   -broker-password=""                         : Password for connecting to the MQTT broker
   -broker-username=""                         : Username for connecting to the MQTT broker
+  -tls=""                                     : TLS mode. 'server:certFile' or 'client:rootCAFile,clientCertFile,clientKeyFile'
   -qos=0                                      : MQTT QoS(0|1|2)
   -retain=false                               : MQTT Retain
   -topic="/mqtt-bench/benchmark"              : Base topic
