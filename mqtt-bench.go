@@ -372,6 +372,14 @@ func Disconnect(client *MQTT.Client) {
 	client.Disconnect(10)
 }
 
+// ファイルの存在チェックを行う。
+// ファイルが存在する場合はtrue、存在しない場合はfalseを返す。
+//   filePath : 存在をチェックするファイルのパス
+func FileExists(filePath string) bool {
+	_, err := os.Stat(filePath)
+	return err == nil
+}
+
 func main() {
 	broker := flag.String("broker", "tcp://{host}:{port}", "URI of MQTT broker (required)")
 	action := flag.String("action", "p|pub or s|sub", "Publish or Subscribe or Subscribe(with publishing) (required)")
@@ -421,15 +429,37 @@ func main() {
 		// nil
 	} else if strings.HasPrefix(*tls, "server:") {
 		var strArray = strings.Split(*tls, "server:")
+		serverCertFile := strings.TrimSpace(strArray[1])
+		if FileExists(serverCertFile) == false {
+			fmt.Printf("File is not found. : certFile -> %s\n", serverCertFile)
+			return
+		}
+
 		certConfig = ServerCertConfig{
-			ServerCertFile: strings.TrimSpace(strArray[1])}
+			ServerCertFile: serverCertFile}
 	} else if strings.HasPrefix(*tls, "client:") {
 		var strArray = strings.Split(*tls, "client:")
 		var configArray = strings.Split(strArray[1], ",")
+		rootCAFile := strings.TrimSpace(configArray[0])
+		clientCertFile := strings.TrimSpace(configArray[1])
+		clientKeyFile := strings.TrimSpace(configArray[2])
+		if FileExists(rootCAFile) == false {
+			fmt.Printf("File is not found. : rootCAFile -> %s\n", rootCAFile)
+			return
+		}
+		if FileExists(clientCertFile) == false {
+			fmt.Printf("File is not found. : clientCertFile -> %s\n", clientCertFile)
+			return
+		}
+		if FileExists(clientKeyFile) == false {
+			fmt.Printf("File is not found. : clientKeyFile -> %s\n", clientKeyFile)
+			return
+		}
+
 		certConfig = ClientCertConfig{
-			RootCAFile:     strings.TrimSpace(configArray[0]),
-			ClientCertFile: strings.TrimSpace(configArray[1]),
-			ClientKeyFile:  strings.TrimSpace(configArray[2])}
+			RootCAFile:     rootCAFile,
+			ClientCertFile: clientCertFile,
+			ClientKeyFile:  clientKeyFile}
 	} else {
 		// nil
 	}
