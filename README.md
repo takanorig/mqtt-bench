@@ -20,7 +20,7 @@ or
 
 Download here
 
-https://github.com/takanorig/mqtt-bench/wiki/Download
+https://github.com/takanorig/mqtt-bench/releases
 
 ### Publish
 * Precondition
