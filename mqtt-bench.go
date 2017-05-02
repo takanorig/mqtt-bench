@@ -122,7 +122,7 @@ func Execute(exec func(clients []MQTT.Client, opts ExecOptions, param ...string)
 		for i := 0; i < len(clients); i++ {
 			client := clients[i]
 			if client != nil {
-				Disconnect(client)
+				client.Disconnect(10)
 			}
 		}
 		return
@@ -140,7 +140,7 @@ func Execute(exec func(clients []MQTT.Client, opts ExecOptions, param ...string)
 	fmt.Printf("%s End benchmark\n", time.Now())
 
 	// 切断に時間がかかるため、非同期で処理を行う。
-	AsyncDisconnect(clients)
+	DisconnectClients(clients)
 
 	// 処理結果を出力する。
 	duration := (endTime.Sub(startTime)).Nanoseconds() / int64(1000000) // nanosecond -> millisecond
@@ -352,24 +352,11 @@ func Connect(id int, execOpts ExecOptions) MQTT.Client {
 	return client
 }
 
-// 非同期でBrokerとの接続を切断する。
-func AsyncDisconnect(clients []MQTT.Client) {
-	wg := new(sync.WaitGroup)
-
+// 全てのクライエントがBrokerとの接続を切断する。
+func DisconnectClients(clients []MQTT.Client) {
 	for _, client := range clients {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			Disconnect(client)
-		}()
+		client.Disconnect(10)
 	}
-
-	wg.Wait()
-}
-
-// Brokerとの接続を切断する。
-func Disconnect(client MQTT.Client) {
-	client.Disconnect(10)
 }
 
 // ファイルの存在チェックを行う。
