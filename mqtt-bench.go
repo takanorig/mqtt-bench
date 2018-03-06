@@ -400,7 +400,7 @@ func main() {
 	preTime := flag.Int("pretime", 3000, "Pre wait time (ms)")
 	intervalTime := flag.Int("intervaltime", 0, "Interval time per message (ms)")
 	debug := flag.Bool("x", false, "Debug mode")
-	cleanSession := flag.Bool("clean", false, "Set clean session tag, default to false")
+	cleanSession := flag.Bool("clean", true, "Set clean session tag, default to true")
 
 	flag.Parse()
 
