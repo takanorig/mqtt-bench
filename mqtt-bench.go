@@ -361,7 +361,6 @@ func AsyncDisconnect(clients []MQTT.Client) {
 
 	for _, client := range clients {
 		wg.Add(1)
-		client := client
 		go func(c MQTT.Client) {
 			defer wg.Done()
 			Disconnect(c)
