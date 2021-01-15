@@ -6,7 +6,7 @@ import (
 	"crypto/x509"
 	"flag"
 	"fmt"
-	MQTT "github.com/eclipse.paho.mqtt.golang.git"
+	MQTT "github.com/eclipse.paho.mqtt.golang"
 	"io/ioutil"
 	"os"
 	"strconv"
